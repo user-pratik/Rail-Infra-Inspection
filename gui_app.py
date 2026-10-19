@@ -145,6 +145,8 @@ class RailwayInspectorApp:
         self.current_model = None
         self.current_model_path = ""
         self.current_model_type = ""
+        self.worker_thread = None
+        self._stop_event = None
         self.cap = None
         self.is_running = False
         self.is_paused = False
@@ -913,9 +915,16 @@ class RailwayInspectorApp:
     # =========================================================================
     def start_playback(self):
         """Starts video demo playback on Tab 1."""
-        if self.is_running:
-            messagebox.showwarning("Session Active", "An inspection session is already running. Please stop it first.")
-            return
+        if hasattr(self, "worker_thread") and self.worker_thread and self.worker_thread.is_alive():
+            self.stop_playback()
+
+        preset_name = self.preset_var_demo.get()
+        info = PRESETS.get(preset_name, {})
+        if not getattr(self, "selected_video", ""):
+            self.selected_video = info.get("video", "")
+        self.selected_model = info.get("model", "")
+        self.selected_model_type = info.get("model_type", "yolo")
+        self.mode = info.get("mode", "general")
 
         if not self.selected_video or not os.path.exists(self.selected_video):
             messagebox.showerror("Error", f"Video file not found:\n{self.selected_video}")
@@ -927,7 +936,7 @@ class RailwayInspectorApp:
         self._clear_report_stats()
         self.current_session_tab = "demo"
         self.capture_kind = "file"
-        self.active_preset_name = self.preset_var_demo.get()
+        self.active_preset_name = preset_name
         self.active_conf_thresh = float(self.conf_slider_demo.get())
 
         # Toggles & Mutual Exclusion
@@ -939,15 +948,16 @@ class RailwayInspectorApp:
         self.status_badge.configure(text="STATUS: DEMO INSPECTING", fg_color="#2b6cb0", text_color="#90cdf4")
         self.is_running = True
         self.is_paused = False
+        self._stop_event = threading.Event()
 
-        thread = threading.Thread(target=self._process_video_thread, daemon=True)
+        thread = threading.Thread(target=self._process_video_thread, args=(self._stop_event,), daemon=True)
+        self.worker_thread = thread
         thread.start()
 
     def start_live_playback(self):
         """Starts live stream capture & inference on Tab 2."""
-        if self.is_running:
-            messagebox.showwarning("Session Active", "An inspection session is already running. Please stop it first.")
-            return
+        if hasattr(self, "worker_thread") and self.worker_thread and self.worker_thread.is_alive():
+            self.stop_playback()
 
         # Prepare parameters from live configuration
         mode_raw = self.live_mode_var.get()
@@ -960,9 +970,11 @@ class RailwayInspectorApp:
             return
         path = self.live_path_entry.get().strip() or "/live"
 
-        self.selected_model = self.selected_model_live
-        self.selected_model_type = self.selected_model_type_live
-        self.mode = self.mode_live
+        preset_name = self.preset_var_live.get()
+        info = PRESETS.get(preset_name, {})
+        self.selected_model = self.selected_model_live or info.get("model", "")
+        self.selected_model_type = self.selected_model_type_live or info.get("model_type", "yolo")
+        self.mode = self.mode_live or info.get("mode", "general")
 
         if not self.selected_model or not os.path.exists(self.selected_model):
             messagebox.showerror("Error", f"Model weights not found:\n{self.selected_model}")
@@ -971,7 +983,7 @@ class RailwayInspectorApp:
         self._clear_report_stats()
         self.current_session_tab = "live"
         self.capture_kind = mode
-        self.active_preset_name = self.preset_var_live.get()
+        self.active_preset_name = preset_name
         self.active_conf_thresh = float(self.conf_slider_live.get())
         self.live_stream_kwargs = {
             "mode": mode,
@@ -993,8 +1005,10 @@ class RailwayInspectorApp:
 
         self.is_running = True
         self.is_paused = False
+        self._stop_event = threading.Event()
 
-        thread = threading.Thread(target=self._process_video_thread, daemon=True)
+        thread = threading.Thread(target=self._process_video_thread, args=(self._stop_event,), daemon=True)
+        self.worker_thread = thread
         thread.start()
 
     def toggle_pause(self):
@@ -1021,6 +1035,13 @@ class RailwayInspectorApp:
 
         self.is_running = False
         self.is_paused = False
+        if hasattr(self, "_stop_event") and self._stop_event is not None:
+            self._stop_event.set()
+
+        if hasattr(self, "worker_thread") and self.worker_thread and self.worker_thread.is_alive():
+            if threading.current_thread() != self.worker_thread:
+                self.worker_thread.join(timeout=2.0)
+            self.worker_thread = None
 
         if self.cap is not None:
             try:
@@ -1044,22 +1065,25 @@ class RailwayInspectorApp:
         self.alert_label_demo.config(text="⏹ Demo Inspection Stopped", bg="#24283b", fg=COLOR_TEXT)
         self.alert_label_live.config(text="⏹ Live Stream Stopped", bg="#24283b", fg=COLOR_TEXT)
 
-    def _safe_log(self, listbox, msg: str):
+    def _safe_after(self, ms: int, func, *args):
         try:
-            self.root.after(0, lambda: (listbox.insert(tk.END, msg), listbox.see(tk.END)))
+            self.root.after(ms, func, *args)
         except Exception:
             pass
+
+    def _safe_log(self, listbox, msg: str):
+        self._safe_after(0, lambda: (listbox.insert(tk.END, msg), listbox.see(tk.END)))
 
     # =========================================================================
     # Unified Inference & Processing Thread
     # =========================================================================
-    def _process_video_thread(self):
+    def _process_video_thread(self, stop_event=None):
         is_live = (self.current_session_tab == "live")
         active_listbox = self.log_listbox_live if is_live else self.log_listbox_demo
         active_slider = self.conf_slider_live if is_live else self.conf_slider_demo
 
         # Load appropriate model
-        if self.current_model_path != self.selected_model:
+        if self.current_model_path != self.selected_model or self.current_model_type != self.selected_model_type or self.current_model is None:
             self._safe_log(active_listbox, f"[LOAD] Initializing {self.selected_model_type.upper()} neural network...")
             if self.selected_model_type == "rcnn":
                 self.current_model = load_rcnn_model(self.selected_model, num_classes=7)
@@ -1118,7 +1142,7 @@ class RailwayInspectorApp:
         self.fps_timer = time.time()
         self.fps_count = 0
 
-        while self.is_running and cap.isOpened():
+        while self.is_running and (stop_event is None or not stop_event.is_set()) and cap.isOpened():
             if self.is_paused:
                 time.sleep(0.05)
                 continue
@@ -1138,7 +1162,7 @@ class RailwayInspectorApp:
             if not ret:
                 if is_live_cap:
                     state_str = getattr(cap, "state", "RECONNECTING")
-                    self.root.after(0, self._update_live_stream_ui_state, state_str, cap.stats())
+                    self._safe_after(0, self._update_live_stream_ui_state, state_str, cap.stats())
                     time.sleep(0.1)
                     continue
                 else:
@@ -1282,7 +1306,7 @@ class RailwayInspectorApp:
             live_stats = cap.stats() if is_live_cap and hasattr(cap, "stats") else {}
 
             # Schedule UI Update on Main Tkinter Thread
-            self.root.after(
+            self._safe_after(
                 0,
                 self._update_ui_frame,
                 frame.copy(),
@@ -1308,18 +1332,20 @@ class RailwayInspectorApp:
                 sleep_duration = max(0.001, target_frame_time - loop_elapsed)
                 time.sleep(sleep_duration)
 
-        if reporting_active:
+        if reporting_active and getattr(self, "_report_token", 0) == report_token:
             self.reporter.end_session(report_token)
             self.reporter.generate_digest()
+            self._report_token = 0
 
-        if self.cap is not None:
+        if self.cap is cap:
             try:
-                self.cap.release()
+                cap.release()
             except Exception:
                 pass
             self.cap = None
 
-        self.root.after(0, self.stop_playback)
+        if self.is_running:
+            self._safe_after(0, self.stop_playback)
 
     def _update_live_stream_ui_state(self, state: str, stats: dict):
         if state == "LIVE":

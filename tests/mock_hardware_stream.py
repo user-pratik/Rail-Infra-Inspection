@@ -27,7 +27,8 @@ def find_ffmpeg():
 def start_mock_stream(
     video_path="sample_bridge_video.mp4",
     target_url="http://127.0.0.1:8554/live",
-    target_fps=15
+    target_fps=15,
+    retries=3
 ):
     if not os.path.isabs(video_path):
         base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -55,11 +56,20 @@ def start_mock_stream(
         "-vcodec", "libx264",
         "-preset", "ultrafast",
         "-tune", "zerolatency",
+        "-g", str(target_fps),
+        "-keyint_min", str(target_fps),
         target_url
     ]
 
-    print(f"[MOCK STREAM] Starting ffmpeg streaming: {' '.join(cmd)}")
-    proc = subprocess.Popen(cmd)
+    for attempt in range(1, retries + 1):
+        print(f"[MOCK STREAM] Starting ffmpeg streaming (attempt {attempt}/{retries}): {' '.join(cmd)}")
+        proc = subprocess.Popen(cmd)
+        time.sleep(0.6)
+        if proc.poll() is None:
+            return proc
+        print(f"[MOCK STREAM] Sender exited with code {proc.returncode}, retrying in 1s...")
+        time.sleep(1.0)
+
     return proc
 
 if __name__ == "__main__":
