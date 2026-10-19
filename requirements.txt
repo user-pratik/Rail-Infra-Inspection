@@ -26,6 +26,7 @@ matplotlib>=3.7.0
 tqdm>=4.65.0
 roboflow>=1.1.0
 reportlab>=4.0.0
+customtkinter>=5.2.0
 
 # --- Edge Inference, ONNX & Profiling ---
 onnx>=1.16.0
