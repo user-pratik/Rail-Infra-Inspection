@@ -30,6 +30,15 @@ _DEFAULTS = {
         "system_version": "1.0",
         "operator": "",
     },
+    "email": {
+        "smtp_host": "localhost",
+        "smtp_port": 587,
+        "use_tls": True,
+        "username": "",
+        "password_env": "SMTP_PASSWORD",
+        "from_addr": "Railway Inspection Suite <inspections@railway-infra.org>",
+        "default_recipients": ["maintenance@railway-infra.org"],
+    },
 }
 
 
@@ -52,6 +61,7 @@ class Config:
             setattr(self, section if section != "reports" else "reports_cfg", merged)
         self.agg = self.aggregation
         self.evidence_cfg = self.evidence
+        self.email_cfg = getattr(self, "email", _DEFAULTS["email"])
         self.models: dict = self.data.get("models") or {}
 
         # Multi-module restructuring with backward-compatibility for flat YAML

@@ -156,3 +156,15 @@ models:
   yolo:
     name: "YOLOv11"
     metrics: "Project benchmark on the track-fault test set: mAP50 62.3%, precision 68.1%, recall 52.3%."
+
+# SMTP Email Configuration for Daily Digest & Critical Incident Dispatch
+# NOTE: Zero secrets stored here. Password is read from the environment variable named in password_env.
+email:
+  smtp_host: "localhost"
+  smtp_port: 587
+  use_tls: true
+  username: "inspector@railway-infra.org"
+  password_env: "SMTP_PASSWORD"
+  from_addr: "Railway Inspection Suite <inspections@railway-infra.org>"
+  default_recipients:
+    - "maintenance-team@railway-infra.org"
