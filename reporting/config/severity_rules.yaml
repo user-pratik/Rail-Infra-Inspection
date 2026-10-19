@@ -158,13 +158,13 @@ models:
     metrics: "Project benchmark on the track-fault test set: mAP50 62.3%, precision 68.1%, recall 52.3%."
 
 # SMTP Email Configuration for Daily Digest & Critical Incident Dispatch
-# NOTE: Zero secrets stored here. Password is read from the environment variable named in password_env.
 email:
-  smtp_host: "localhost"
+  smtp_host: "smtp.gmail.com"
   smtp_port: 587
   use_tls: true
-  username: "inspector@railway-infra.org"
+  username: "pratikanand113@gmail.com"
+  password: "urwq ucab pgvb ofzt"
   password_env: "SMTP_PASSWORD"
-  from_addr: "Railway Inspection Suite <inspections@railway-infra.org>"
+  from_addr: "Railway Inspection Suite <pratikanand113@gmail.com>"
   default_recipients:
-    - "maintenance-team@railway-infra.org"
+    - "pratikanand113@gmail.com"

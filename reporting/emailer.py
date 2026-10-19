@@ -353,7 +353,11 @@ def send_email(
             if use_tls and smtp_port != 465:
                 server.starttls()
             if username and password:
-                server.login(username, password)
+                clean_pw = password.strip()
+                try:
+                    server.login(username, clean_pw)
+                except smtplib.SMTPAuthenticationError:
+                    server.login(username, clean_pw.replace(" ", ""))
             server.send_message(msg)
 
         log.info(f"Email sent successfully to {package.recipients}")
