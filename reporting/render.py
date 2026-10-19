@@ -268,8 +268,10 @@ def render_incident(path, *, base: Path, cfg, report_id: str, event: dict, run: 
 
     # 2 Inspection context
     inspection_label = mod_cfg.get("inspection_label", "Defect inspection")
+    is_live = bool(run.get("is_live", False))
+    source_label = f"[LIVE] {run.get('video_name', 'Live Stream')}" if is_live else run.get("video_name", "n/a")
     story += [_heading("2. Inspection Context", st), _kv([
-        ("Source video", run.get("video_name", "n/a")),
+        ("Source", source_label),
         ("Inspection date / time", _fmt_dt(run.get("started_at"))),
         ("Inspection module", inspection_label),
         ("Model", f"{model_name} ({Path(run.get('model_path') or 'n/a').name})"),
@@ -293,13 +295,19 @@ def render_incident(path, *, base: Path, cfg, report_id: str, event: dict, run: 
             except Exception:
                 pass
 
+    if is_live:
+        frame_desc = f"Timestamp {_fmt_ts(event['first_ts'])} (frame {event['best_frame']})"
+    elif run.get("total_frames"):
+        frame_desc = f"Frame {event['best_frame']} / {run['total_frames']} (range {event['first_frame']} to {event['last_frame']})"
+    else:
+        frame_desc = f"{event['first_frame']} to {event['last_frame']} (best frame {event['best_frame']})"
+
     story += [_heading("3. Defect Details", st),
               Paragraph(_txt(rule.get("description", "")), st["body"]), Spacer(1, 4), _kv([
                   ("Class", cls_label),
                   ("Bounding box (px)", f"x1={bbox[0]}, y1={bbox[1]}, x2={bbox[2]}, y2={bbox[3]}"),
                   ("Size in image", f"{w} x {h} px{area_note} (real-world size unavailable: camera not calibrated)"),
-                  ("Frame range", f"{event['first_frame']} to {event['last_frame']} "
-                                  f"(best frame {event['best_frame']})"),
+                  ("Frame / timing", frame_desc),
                   ("Video time range", f"{_fmt_ts(event['first_ts'])} to {_fmt_ts(event['last_ts'])}"),
                   ("Confirmed detections", f"{event['hits']} frames"),
               ], st)]
@@ -316,8 +324,9 @@ def render_incident(path, *, base: Path, cfg, report_id: str, event: dict, run: 
         t.setStyle(TableStyle([("ALIGN", (0, 0), (-1, -1), "CENTER"), ("VALIGN", (0, 0), (-1, 0), "MIDDLE")]))
         ev_items.append(t)
         strip = []
+        best_cap = f"Timestamp {_fmt_ts(event['first_ts'])} (frame {event['best_frame']})" if is_live else f"Best (frame {event['best_frame']})"
         for name, cap in (("strip_first.jpg", f"First seen (frame {event['first_frame']})"),
-                          ("strip_best.jpg", f"Best (frame {event['best_frame']})"),
+                          ("strip_best.jpg", best_cap),
                           ("strip_last.jpg", f"Last seen (frame {event['last_frame']})")):
             im = _image(ev_dir / name, 52 * mm, 52 * mm)
             if im:
@@ -492,7 +501,10 @@ def render_digest(path, *, base: Path, cfg, report_id: str, date: str, events: l
         for r in runs:
             r_mod = r.get("module", "track")
             m_info = cfg.get_model_info(r_mod, r.get("model_type", ""))
-            cov_rows.append([f"#{r['id']}", r_mod.capitalize(), r.get("video_name") or "n/a",
+            src_name = r.get("video_name") or "n/a"
+            if r.get("is_live"):
+                src_name = f"[LIVE] {src_name}"
+            cov_rows.append([f"#{r['id']}", r_mod.capitalize(), src_name,
                              m_info.get("name", r.get("model_type", "n/a")),
                              str(r.get("frames_processed") or 0), _fmt_dt(r.get("started_at"))])
         # Widths sum to 174 mm (CONTENT_W)

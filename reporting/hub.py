@@ -51,6 +51,8 @@ class _Session:
     agg: Aggregator
     module: str = "track"
     structure_id: str | None = None
+    is_live: bool = False
+    source_type: str = "file"
     frames_seen: int = 0
     incidents: int = 0
     queued: int = 0
@@ -84,7 +86,8 @@ class ReportingHub:
 
     # ------------------------------------------------------------------ public API
     def start_session(self, video_path, model_path, model_type, fps, total_frames,
-                      conf_threshold=None, module="track", structure_id=None) -> int:
+                      conf_threshold=None, module="track", structure_id=None,
+                      is_live=False, source_type="file") -> int:
         with self._lock:
             self._token += 1
             token = self._active_token = self._token
@@ -92,7 +95,8 @@ class ReportingHub:
         self._put(("start", token, dict(
             video_path=str(video_path), model_path=str(model_path), model_type=str(model_type),
             fps=float(fps) if fps and fps > 0 else 15.0, total_frames=int(total_frames or 0),
-            conf_threshold=conf_threshold, module=module, structure_id=structure_id)))
+            conf_threshold=conf_threshold, module=module, structure_id=structure_id,
+            is_live=bool(is_live), source_type=str(source_type))))
         return token
 
     def ingest(self, token, frame_idx, frame, detections) -> None:
@@ -218,9 +222,11 @@ class ReportingHub:
         operator = self.cfg.reports_cfg.get("operator") or getpass.getuser()
         module = p.get("module", "track")
         structure_id = p.get("structure_id")
+        is_live = bool(p.get("is_live", False))
+        source_type = str(p.get("source_type", "file"))
         run_id = self.store.create_run(
             video_path=p["video_path"], video_name=os.path.basename(p["video_path"]), module=module,
-            structure_id=structure_id,
+            structure_id=structure_id, is_live=is_live, source_type=source_type,
             model_type=p["model_type"], model_path=p["model_path"], fps=p["fps"],
             total_frames=p["total_frames"], conf_threshold=p["conf_threshold"], operator=operator,
             started_at=now.isoformat(timespec="seconds"), run_date=now.date().isoformat())
@@ -228,7 +234,8 @@ class ReportingHub:
         self._cur = _Session(token=token, run_id=run_id, video_name=os.path.basename(p["video_path"]),
                              model_path=p["model_path"], fps=p["fps"],
                              telemetry=DummyTelemetry(fps=p["fps"]), agg=Aggregator(agg_cfg),
-                             module=module, structure_id=structure_id)
+                             module=module, structure_id=structure_id,
+                             is_live=is_live, source_type=source_type)
 
     def _on_frame(self, token, frame_idx, frame, raw_dets) -> None:
         s = self._cur

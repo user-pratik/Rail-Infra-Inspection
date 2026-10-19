@@ -614,10 +614,13 @@ class RailwayInspectorApp:
         report_token = 0
         if reporting_active:
             structure_id = os.path.splitext(os.path.basename(self.selected_video))[0] if report_mod == "bridge" else None
+            source_type = "file" if not is_live else getattr(cap, "mode", "http_listen")
+            video_label = cap.display_name() if is_live and hasattr(cap, "display_name") else self.selected_video
             report_token = self.reporter.start_session(
-                self.selected_video, self.current_model_path, self.current_model_type,
+                video_label, self.current_model_path, self.current_model_type,
                 fps, total_frames, float(self.conf_slider.get()),
-                module=report_mod, structure_id=structure_id)
+                module=report_mod, structure_id=structure_id,
+                is_live=is_live, source_type=source_type)
             self._report_token = report_token
 
         frame_idx = 0

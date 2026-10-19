@@ -16,6 +16,8 @@ CREATE TABLE IF NOT EXISTS inspection_runs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     video_path TEXT, video_name TEXT, module TEXT DEFAULT 'track',
     structure_id TEXT,
+    is_live BOOLEAN DEFAULT 0,
+    source_type TEXT DEFAULT 'file',
     model_type TEXT, model_path TEXT, model_hash TEXT,
     fps REAL, total_frames INTEGER,
     frames_processed INTEGER DEFAULT 0, dropped_frames INTEGER DEFAULT 0,
@@ -41,9 +43,10 @@ CREATE INDEX IF NOT EXISTS idx_events_date ON defect_events(event_date);
 CREATE INDEX IF NOT EXISTS idx_events_cls ON defect_events(cls);
 """
 
-_RUN_COLS = {"video_path", "video_name", "module", "structure_id", "model_type", "model_path",
-             "model_hash", "fps", "total_frames", "frames_processed", "dropped_frames",
-             "conf_threshold", "operator", "started_at", "ended_at", "run_date"}
+_RUN_COLS = {"video_path", "video_name", "module", "structure_id", "is_live", "source_type",
+             "model_type", "model_path", "model_hash", "fps", "total_frames",
+             "frames_processed", "dropped_frames", "conf_threshold", "operator",
+             "started_at", "ended_at", "run_date"}
 _EVENT_COLS = {"run_id", "module", "cls", "severity", "routing", "note", "first_frame", "last_frame",
                "best_frame", "hits", "best_conf", "mean_conf", "bbox", "lat", "lon",
                "location_name", "location_source", "first_ts", "last_ts", "detected_at",
@@ -72,6 +75,10 @@ class Store:
             c.execute("ALTER TABLE inspection_runs ADD COLUMN structure_id TEXT")
         if "module" not in cols_runs:
             c.execute("ALTER TABLE inspection_runs ADD COLUMN module TEXT DEFAULT 'track'")
+        if "is_live" not in cols_runs:
+            c.execute("ALTER TABLE inspection_runs ADD COLUMN is_live BOOLEAN DEFAULT 0")
+        if "source_type" not in cols_runs:
+            c.execute("ALTER TABLE inspection_runs ADD COLUMN source_type TEXT DEFAULT 'file'")
 
         c.execute("CREATE INDEX IF NOT EXISTS idx_events_mod_cls ON defect_events(module, cls);")
 
