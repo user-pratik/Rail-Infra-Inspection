@@ -14,6 +14,7 @@ import logging
 import mimetypes
 import os
 import smtplib
+import zipfile
 from email.message import EmailMessage
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -257,14 +258,24 @@ def prepare_email_package(
 
     # 3. Gather critical incident PDFs
     incidents_dir = base_dir / "incidents"
+    incident_pdfs: List[Path] = []
     for ev in critical_events:
         rep_id = ev.get("report_id")
         if rep_id:
             pdf_file = incidents_dir / f"{rep_id}.pdf"
-            if pdf_file.exists() and pdf_file not in attachments:
-                attachments.append(pdf_file)
+            if pdf_file.exists() and pdf_file not in incident_pdfs:
+                incident_pdfs.append(pdf_file)
 
-    # 4. Generate CSV export
+    # Cap directly attached incident PDFs to keep total email size under ~5 MB
+    # and avoid socket write timeouts / SMTP server disconnects over residential links.
+    max_direct = int(email_cfg.get("max_incident_attachments", 6))
+    if len(incident_pdfs) <= max_direct:
+        attachments.extend(incident_pdfs)
+    else:
+        # Attach the top priority incidents directly
+        attachments.extend(incident_pdfs[:max_direct])
+
+    # 4. Generate CSV export (always included)
     csv_name = f"critical_incident_records_{date.replace('-', '')}.csv"
     csv_path = base_dir / "daily" / csv_name
     export_critical_incidents_csv(critical_events, runs_by_id, csv_path)
@@ -344,14 +355,17 @@ def send_email(
             )
 
         log.info(f"Connecting to SMTP server {smtp_host}:{smtp_port}...")
+        socket_timeout = 120  # 2 minutes for reliable upload over residential Wi-Fi
         if smtp_port == 465:
-            server = smtplib.SMTP_SSL(smtp_host, smtp_port, timeout=15)
+            server = smtplib.SMTP_SSL(smtp_host, smtp_port, timeout=socket_timeout)
         else:
-            server = smtplib.SMTP(smtp_host, smtp_port, timeout=15)
+            server = smtplib.SMTP(smtp_host, smtp_port, timeout=socket_timeout)
 
         with server:
+            server.ehlo()
             if use_tls and smtp_port != 465:
                 server.starttls()
+                server.ehlo()
             if username and password:
                 clean_pw = password.strip()
                 try:
@@ -363,7 +377,15 @@ def send_email(
         log.info(f"Email sent successfully to {package.recipients}")
         return True, f"Sent email to {', '.join(package.recipients)} with {len(package.attachments)} attachments."
 
+    except (smtplib.SMTPServerDisconnected, TimeoutError) as exc:
+        err_msg = (
+            f"SMTP Connection Disconnected or Timed Out ({exc}). "
+            "This usually indicates network upload latency or attachment size limits."
+        )
+        log.error(f"Failed to send email: {err_msg}")
+        return False, err_msg
     except Exception as exc:
         err_msg = f"{type(exc).__name__}: {exc}"
         log.error(f"Failed to send email: {err_msg}")
         return False, err_msg
+
