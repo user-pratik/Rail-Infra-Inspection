@@ -1,0 +1,158 @@
+# =============================================================================
+# Automated defect reporting - routing rules and settings
+# Edit this file to change behaviour. No code changes needed.
+#
+# severity:
+#   critical -> immediate incident report (if confidence >= critical_min_confidence,
+#               otherwise it goes to the daily digest flagged "needs review")
+#   moderate -> daily digest only
+#   info     -> inventory only (logged, counted, never reported as a defect)
+#
+# The descriptions / risks / actions below are GENERIC placeholder wording.
+# Replace them with your railway authority's own maintenance rules.
+# =============================================================================
+
+modules:
+  track:
+    display_name: "Railway Track Defect Inspection"
+    inspection_label: "Railway track defect inspection"
+    class_aliases:
+      crack:    [crack, cracks]
+      squat:    [squat, squats]
+      spalling: [spalling, shelling]
+      flaking:  [flaking, flakings]
+      groove:   [groove, grooves]
+      joint:    [joint, joints]
+    classes:
+      crack:
+        severity: critical
+        critical_min_confidence: 0.35
+        description: "Longitudinal or transverse fracture line in the rail head, typically caused by rolling contact fatigue (RCF)."
+        risk: "A propagating crack can lead to a rail break and derailment."
+        recommended_action: "Dispatch a track patrol to verify on site. Consider a temporary speed restriction until the defect is verified."
+        response_time: "Per railway maintenance rules (not configured)"
+      squat:
+        severity: critical
+        critical_min_confidence: 0.35
+        description: "Surface-initiated defect with plastic deformation and cracking under wheel contact."
+        risk: "Can develop into a transverse crack and a rail break."
+        recommended_action: "Verify on site and schedule non-destructive testing of the affected section."
+        response_time: "Per railway maintenance rules (not configured)"
+      spalling:
+        severity: critical
+        critical_min_confidence: 0.35
+        description: "Pieces of the rail-head surface breaking away and leaving craters."
+        risk: "Progressive loss of running surface, raising dynamic wheel loads and accelerating further damage."
+        recommended_action: "Verify on site and assess for repair or grinding."
+        response_time: "Per railway maintenance rules (not configured)"
+      flaking:
+        severity: moderate
+        description: "Progressive delamination of the surface layer along the gauge corner."
+        risk: "Can worsen into spalling if left untreated."
+        recommended_action: "Review in the daily digest and schedule monitoring or grinding."
+        response_time: "Per railway maintenance rules (not configured)"
+      groove:
+        severity: moderate
+        description: "Linear wheel-burn or gouge damage along the running surface."
+        risk: "Can act as a crack initiation site."
+        recommended_action: "Review in the daily digest and schedule monitoring."
+        response_time: "Per railway maintenance rules (not configured)"
+      joint:
+        severity: info
+        description: "Bolted rail joint or fishplate connecting rail sections (structural feature, not a defect)."
+        risk: "Not a defect."
+        recommended_action: "None. Logged as inventory only."
+        response_time: "n/a"
+    models:
+      rcnn:
+        name: "Faster R-CNN (ResNet-50 FPN)"
+        metrics: "Project benchmark on the track-fault test set: mAP50 17.69%, precision 46.61%, recall 8.63%."
+      yolo:
+        name: "YOLOv11"
+        metrics: "Project benchmark on the track-fault test set: mAP50 62.3%, precision 68.1%, recall 52.3%."
+
+  bridge:
+    display_name: "Bridge Structural Defect Inspection"
+    inspection_label: "Bridge structural defect inspection"
+    class_aliases:
+      corrosion: [corrosion, rust, corrosions, rusts]
+      crack:     [crack, cracks, structural crack, structural cracks]
+      freelime:  [freelime, free lime, free_lime, free-lime, efflorescence, free limes, freelimes]
+      leakage:   [leakage, leak, water ingress, leaks, leakages]
+      spalling:  [spalling, spall, spalls, spallings]
+    classes:
+      crack:
+        severity: critical
+        critical_min_confidence: 0.45
+        description: "Structural stress cracks in concrete piers, girders and tunnel walls."
+        risk: "Stress fractures compromise structural integrity and can propagate under cyclical live loads."
+        recommended_action: "Conduct hands-on structural engineering inspection and install crack monitoring gauges."
+        response_time: "Per railway maintenance rules (not configured)"
+      spalling:
+        severity: critical
+        critical_min_confidence: 0.45
+        description: "Surface concrete breaking away and exposing reinforcement."
+        risk: "Exposed reinforcement steel suffers rapid corrosion and loss of structural load-bearing capacity."
+        recommended_action: "Clear loose material, apply anti-corrosion barrier to exposed steel, and patch with structural mortar."
+        response_time: "Per railway maintenance rules (not configured)"
+      corrosion:
+        severity: critical
+        critical_min_confidence: 0.45
+        description: "Oxidation and rust on structural steel and reinforcement."
+        risk: "Reduces steel cross-sectional area and load capacity, leading to eventual section failure."
+        recommended_action: "Clean surface, measure steel section loss with ultrasonic thickness gauge, and apply protective coating."
+        response_time: "Per railway maintenance rules (not configured)"
+      leakage:
+        severity: moderate
+        description: "Water ingress through joints, weep holes or rock mass."
+        risk: "Accelerates concrete degradation, freeze-thaw cracking, and internal steel reinforcement corrosion."
+        recommended_action: "Inspect drainage channels, seal active seepage points, and ensure weep holes are unclogged."
+        response_time: "Per railway maintenance rules (not configured)"
+      freelime:
+        severity: moderate
+        description: "Efflorescence from calcium hydroxide leaching through concrete fractures."
+        risk: "Indicates active water percolation through the concrete matrix, leaching binder over time."
+        recommended_action: "Trace water source, repair sealing/waterproofing, and monitor leaching progression."
+        response_time: "Per railway maintenance rules (not configured)"
+    aggregation:
+      match_center_factor: 2.5
+      max_gap_frames: 20
+      confirm_hits: 3
+      confirm_window: 6
+      merge_same_class_iou: 0.30
+    models:
+      yolo:
+        name: "YOLOv11"
+        metrics: "from runs/bridge/yolov11_bridge/results.csv: precision 59.0%, recall 55.3%, mAP50 55.2%, mAP50-95 26.4%."
+
+# Default event aggregation: turns per-frame detections into one event per physical defect.
+aggregation:
+  min_detection_confidence: 0.25   # detections below this are ignored by the reporter
+  confirm_hits: 3                  # N: detections needed ...
+  confirm_window: 6                # M: ... within the last M frames to confirm an event
+  max_gap_frames: 15               # event is closed when not seen for this many frames
+  match_iou: 0.10                  # frame-to-frame match: IoU at least this ...
+  match_center_factor: 1.5         # ... or centre distance within this x box diagonal (camera moves)
+  last_image_every: 3              # refresh the "last seen" evidence frame every N frames
+  queue_size: 128                  # max frames buffered for the reporting worker
+
+evidence:
+  jpeg_quality: 90
+  crop_padding: 0.25               # context around the defect crop, as a fraction of box size
+  max_dim: 1280                    # frames wider or taller than this are downscaled before queueing
+
+reports:
+  output_dir: reports              # relative to the repo root (or an absolute path)
+  project_name: "Railway Infrastructure & Defect Inspection Suite"
+  team: "HEDGE-Z"
+  system_version: "1.0"
+  operator: ""                     # blank = use the logged-in OS user name
+
+# Global fallback models shown in report appendix if not defined in the module.
+models:
+  rcnn:
+    name: "Faster R-CNN (ResNet-50 FPN)"
+    metrics: "Project benchmark on the track-fault test set: mAP50 17.69%, precision 46.61%, recall 8.63%."
+  yolo:
+    name: "YOLOv11"
+    metrics: "Project benchmark on the track-fault test set: mAP50 62.3%, precision 68.1%, recall 52.3%."
