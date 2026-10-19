@@ -22,6 +22,7 @@ from torchvision.models.detection.faster_rcnn import FastRCNNPredictor
 from ultralytics import YOLO
 from reporting.hub import ReportingHub
 from reporting.gui_panel import ReportingPanel
+from streaming import open_capture
 
 # Real-world estimated obstacle widths in centimeters
 KNOWN_WIDTH = {
@@ -126,6 +127,7 @@ class RailwayInspectorApp:
         self.reporter = ReportingHub()
         self._report_token = 0
         self.playback_speed = 1.0
+        self.capture_kind = "file"
 
         self._build_ui()
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
@@ -591,7 +593,8 @@ class RailwayInspectorApp:
             self.current_model_path = self.selected_model
             self.current_model_type = self.selected_model_type
 
-        cap = cv2.VideoCapture(self.selected_video)
+        cap = open_capture(getattr(self, "capture_kind", "file"), self.selected_video)
+        is_live = getattr(cap, "is_live", False)
         if not cap.isOpened():
             self.log_listbox.insert(tk.END, "[ERROR] Unable to open video stream.")
             self.stop_playback()
@@ -627,22 +630,37 @@ class RailwayInspectorApp:
                 continue
 
             frame_start = time.time()
-            speed_val = getattr(self, "playback_speed", 1.0)
-            if speed_val > 1.2:
-                skip_count = int(round(speed_val)) - 1
-                for _ in range(skip_count):
-                    if not cap.grab():
-                        break
-                    frame_idx += 1
+            if not is_live:
+                speed_val = getattr(self, "playback_speed", 1.0)
+                if speed_val > 1.2:
+                    skip_count = int(round(speed_val)) - 1
+                    for _ in range(skip_count):
+                        if not cap.grab():
+                            break
+                        frame_idx += 1
 
             ret, frame = cap.read()
             if not ret:
-                # Video playback complete
-                if reporting_active:
-                    self.reporter.end_session(report_token)
-                    self.reporter.generate_digest()
-                self.log_listbox.insert(tk.END, "[INFO] Video playback complete.")
-                break
+                if is_live:
+                    state_str = getattr(cap, "state", "RECONNECTING")
+                    self.root.after(0, lambda s=state_str: self.alert_label.config(
+                        text=f"📡 Stream {s.lower()} - waiting for frames...",
+                        bg="#744210",
+                        fg="#fbd38d"
+                    ))
+                    time.sleep(0.1)
+                    continue
+                else:
+                    # Video playback complete
+                    if reporting_active:
+                        self.reporter.end_session(report_token)
+                        self.reporter.generate_digest()
+                    self.log_listbox.insert(tk.END, "[INFO] Video playback complete.")
+                    break
+
+            if is_live and (frame_w == 0 or frame_h == 0):
+                frame_h, frame_w = frame.shape[:2]
+                scaled_focal_length = BASE_FOCAL_LENGTH_640 * (max(frame_w, 640) / 640.0)
 
             raw_frame = frame.copy() if (reporting_active and self.current_model_type == "rcnn") else None
             report_dets = []
@@ -798,11 +816,13 @@ class RailwayInspectorApp:
             if reporting_active:
                 self.reporter.ingest(report_token, frame_idx, raw_frame if report_dets else None, report_dets)
 
-            # Dynamic sleep based on target FPS and playback speed
-            target_frame_time = (1.0 / (fps * speed_val)) if fps > 0 else 0.03
-            loop_elapsed = time.time() - frame_start
-            sleep_duration = max(0.001, target_frame_time - loop_elapsed)
-            time.sleep(sleep_duration)
+            if not is_live:
+                # Dynamic sleep based on target FPS and playback speed
+                speed_val = getattr(self, "playback_speed", 1.0)
+                target_frame_time = (1.0 / (fps * speed_val)) if fps > 0 else 0.03
+                loop_elapsed = time.time() - frame_start
+                sleep_duration = max(0.001, target_frame_time - loop_elapsed)
+                time.sleep(sleep_duration)
 
         if reporting_active:
             self.reporter.end_session(report_token)
@@ -813,7 +833,10 @@ class RailwayInspectorApp:
     def _update_ui_frame(self, frame_bgr, frame_idx, total_frames, obj_count, in_track_dist, lateral_dist, alert, lateral_feature, items):
         # Update metrics
         self.lbl_fps.config(text=f"{self.current_fps} FPS")
-        self.lbl_frame.config(text=f"{frame_idx} / {total_frames}")
+        if total_frames > 0:
+            self.lbl_frame.config(text=f"{frame_idx} / {total_frames}")
+        else:
+            self.lbl_frame.config(text=f"LIVE #{frame_idx}")
         self.lbl_objects.config(text=str(obj_count))
 
         if self.mode == "distance_tracking":

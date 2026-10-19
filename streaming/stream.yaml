@@ -1,0 +1,11 @@
+# Live Stream Configuration for Railway Infrastructure Inspection Suite
+# NOTE: ffmpeg's HTTP listener has NO authentication. Use only on a private LAN or dedicated hotspot.
+
+mode: "listen"               # "listen" (hardware pushes to PC) or "connect" (PC pulls from camera)
+bind: "0.0.0.0"             # Bind interface for listen mode
+host: "127.0.0.1"           # Target host for connect mode
+port: 8554                  # Port for stream transfer
+path: "/live"               # URL path
+max_width: 1280             # Maximum resolution downscale limit
+read_timeout: 5.0           # Seconds before read() returns False/timeout
+buffer_frames: 1            # Drop-oldest queue size (keep newest only)
